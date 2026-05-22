@@ -1,0 +1,6 @@
+{
+  "replace_all": false,
+  "file_path": "D:\\compareModels\\c2\\netbox\\netbox\\extras\\filtersets.py",
+  "old_string": "    'WebhookFilterSet',\n)",
+  "new_string": "    'WebhookDeliveryFilterSet',\n    'WebhookFilterSet',\n)"
+}

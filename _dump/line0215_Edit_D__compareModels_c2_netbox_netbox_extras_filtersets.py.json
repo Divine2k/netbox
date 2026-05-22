@@ -1,0 +1,6 @@
+{
+  "replace_all": false,
+  "file_path": "D:\\compareModels\\c2\\netbox\\netbox\\extras\\filtersets.py",
+  "old_string": "    def search(self, queryset, name, value):\n        if not value.strip():\n            return queryset\n        return queryset.filter(\n            Q(name__icontains=value) |\n            Q(description__icontains=value) |\n            Q(payload_url__icontains=value)\n        )\n\n\n@register_filterset\nclass EventRuleFilterSet(OwnerFilterMixin, NetBoxModelFilterSet):",
+  "new_string": "    def search(self, queryset, name, value):\n        if not value.strip():\n            return queryset\n        return queryset.filter(\n            Q(name__icontains=value) |\n            Q(description__icontains=value) |\n            Q(payload_url__icontains=value)\n        )\n\n\n@register_filterset\nclass WebhookDeliveryFilterSet(BaseFilterSet):\n    webhook_id = django_filters.ModelMultipleChoiceFilter(\n        field_name='webhook',\n        queryset=Webhook.objects.all(),\n        label=_('Webhook (ID)'),\n    )\n    created = django_filters.DateTimeFromToRangeFilter()\n    last_updated = django_filters.DateTimeFromToRangeFilter()\n\n    class Meta:\n        model = WebhookDelivery\n        fields = ('id', 'success', 'status_code', 'attempt_count')\n\n\n@register_filterset\nclass EventRuleFilterSet(OwnerFilterMixin, NetBoxModelFilterSet):"
+}

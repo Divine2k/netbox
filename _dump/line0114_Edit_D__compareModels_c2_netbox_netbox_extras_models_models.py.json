@@ -1,0 +1,6 @@
+{
+  "replace_all": false,
+  "file_path": "D:\\compareModels\\c2\\netbox\\netbox\\extras\\models\\models.py",
+  "old_string": "__all__ = (\n    'Bookmark',\n    'CustomLink',\n    'EventRule',\n    'ExportTemplate',\n    'ImageAttachment',\n    'JournalEntry',\n    'SavedFilter',\n    'TableConfig',\n    'Webhook',\n)",
+  "new_string": "__all__ = (\n    'Bookmark',\n    'CustomLink',\n    'EventRule',\n    'ExportTemplate',\n    'ImageAttachment',\n    'JournalEntry',\n    'SavedFilter',\n    'TableConfig',\n    'Webhook',\n    'WebhookDelivery',\n)"
+}

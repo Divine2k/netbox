@@ -1,0 +1,6 @@
+{
+  "replace_all": false,
+  "file_path": "D:\\compareModels\\c2\\netbox\\netbox\\extras\\api\\views.py",
+  "old_string": "from rest_framework.mixins import CreateModelMixin, ListModelMixin, RetrieveModelMixin\nfrom rest_framework.permissions import DjangoModelPermissions\nfrom rest_framework.renderers import JSONRenderer\nfrom rest_framework.response import Response\nfrom rest_framework.routers import APIRootView\nfrom rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet\nfrom rq import Worker",
+  "new_string": "from rest_framework.mixins import CreateModelMixin, ListModelMixin, RetrieveModelMixin\nfrom rest_framework.renderers import JSONRenderer\nfrom rest_framework.response import Response\nfrom rest_framework.routers import APIRootView\nfrom rest_framework.viewsets import ModelViewSet\nfrom rq import Worker"
+}

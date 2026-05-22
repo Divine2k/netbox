@@ -1,0 +1,6 @@
+{
+  "replace_all": false,
+  "file_path": "D:\\compareModels\\c2\\netbox\\netbox\\extras\\models\\models.py",
+  "old_string": "    def __str__(self):\n        return f'{self.url} ({self.status_code or \"error\"})'\n\n    def get_absolute_url(self):\n        return reverse('extras:webhookdelivery', args=[self.pk])\n\n\nclass CustomLink(CloningMixin, ExportTemplatesMixin, OwnerMixin, ChangeLoggedModel):",
+  "new_string": "    def __str__(self):\n        return f'{self.url} ({self.status_code or \"error\"})'\n\n\nclass CustomLink(CloningMixin, ExportTemplatesMixin, OwnerMixin, ChangeLoggedModel):"
+}

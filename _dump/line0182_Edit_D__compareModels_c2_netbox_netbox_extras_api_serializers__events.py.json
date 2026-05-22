@@ -1,0 +1,6 @@
+{
+  "replace_all": false,
+  "file_path": "D:\\compareModels\\c2\\netbox\\netbox\\extras\\api\\serializers_\\events.py",
+  "old_string": "from core.models import ObjectType\nfrom extras.choices import *\nfrom extras.models import EventRule, Webhook\nfrom netbox.api.fields import ChoiceField, ContentTypeField\nfrom netbox.api.gfk_fields import GFKSerializerField\nfrom netbox.api.serializers import NetBoxModelSerializer\nfrom users.api.serializers_.mixins import OwnerMixin\n\n__all__ = (\n    'EventRuleSerializer',\n    'WebhookSerializer',\n)",
+  "new_string": "from rest_framework import serializers\n\nfrom core.models import ObjectType\nfrom extras.choices import *\nfrom extras.models import EventRule, Webhook, WebhookDelivery\nfrom netbox.api.fields import ChoiceField, ContentTypeField\nfrom netbox.api.gfk_fields import GFKSerializerField\nfrom netbox.api.serializers import NetBoxModelSerializer\nfrom users.api.serializers_.mixins import OwnerMixin\n\n__all__ = (\n    'EventRuleSerializer',\n    'WebhookDeliverySerializer',\n    'WebhookSerializer',\n)"
+}

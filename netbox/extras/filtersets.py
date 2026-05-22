@@ -36,6 +36,7 @@ __all__ = (
     'TableConfigFilterSet',
     'TagFilterSet',
     'TaggedItemFilterSet',
+    'WebhookDeliveryFilterSet',
     'WebhookFilterSet',
 )
 
@@ -93,6 +94,21 @@ class WebhookFilterSet(OwnerFilterMixin, NetBoxModelFilterSet):
             Q(description__icontains=value) |
             Q(payload_url__icontains=value)
         )
+
+
+@register_filterset
+class WebhookDeliveryFilterSet(BaseFilterSet):
+    webhook_id = django_filters.ModelMultipleChoiceFilter(
+        field_name='webhook',
+        queryset=Webhook.objects.all(),
+        label=_('Webhook (ID)'),
+    )
+    created = django_filters.DateTimeFromToRangeFilter()
+    last_updated = django_filters.DateTimeFromToRangeFilter()
+
+    class Meta:
+        model = WebhookDelivery
+        fields = ('id', 'success', 'status_code', 'attempt_count')
 
 
 @register_filterset

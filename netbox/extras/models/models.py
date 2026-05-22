@@ -48,6 +48,7 @@ __all__ = (
     'SavedFilter',
     'TableConfig',
     'Webhook',
+    'WebhookDelivery',
 )
 
 
@@ -302,6 +303,75 @@ class Webhook(CustomFieldsMixin, ExportTemplatesMixin, TagsMixin, OwnerMixin, Ch
         Render the payload URL.
         """
         return render_jinja2(self.payload_url, context)
+
+
+class WebhookDelivery(models.Model):
+    """
+    A persisted record of a webhook delivery attempt. Written only when all retry attempts
+    are exhausted and the delivery failed; serves as a dead-letter queue for inspection and replay.
+    """
+    created = models.DateTimeField(
+        verbose_name=_('created'),
+        auto_now_add=True,
+    )
+    last_updated = models.DateTimeField(
+        verbose_name=_('last updated'),
+        auto_now=True,
+    )
+    webhook = models.ForeignKey(
+        to='extras.Webhook',
+        on_delete=models.SET_NULL,
+        related_name='deliveries',
+        blank=True,
+        null=True,
+    )
+    url = models.CharField(
+        verbose_name=_('URL'),
+        max_length=500,
+    )
+    request_body = models.TextField(
+        verbose_name=_('request body'),
+        blank=True,
+    )
+    request_headers = models.JSONField(
+        verbose_name=_('request headers'),
+        default=dict,
+        blank=True,
+    )
+    status_code = models.IntegerField(
+        verbose_name=_('status code'),
+        blank=True,
+        null=True,
+    )
+    response_body = models.TextField(
+        verbose_name=_('response body'),
+        blank=True,
+        null=True,
+    )
+    success = models.BooleanField(
+        verbose_name=_('success'),
+        default=False,
+    )
+    attempt_count = models.PositiveSmallIntegerField(
+        verbose_name=_('attempt count'),
+        default=0,
+    )
+    error_message = models.CharField(
+        verbose_name=_('error message'),
+        max_length=1000,
+        blank=True,
+        null=True,
+    )
+
+    objects = RestrictedQuerySet.as_manager()
+
+    class Meta:
+        ordering = ('-last_updated',)
+        verbose_name = _('webhook delivery')
+        verbose_name_plural = _('webhook deliveries')
+
+    def __str__(self):
+        return f'{self.url} ({self.status_code or "error"})'
 
 
 class CustomLink(CloningMixin, ExportTemplatesMixin, OwnerMixin, ChangeLoggedModel):

@@ -1,0 +1,6 @@
+{
+  "replace_all": false,
+  "file_path": "D:\\compareModels\\c2\\netbox\\netbox\\extras\\api\\urls.py",
+  "old_string": "router.register('event-rules', views.EventRuleViewSet)\nrouter.register('webhooks', views.WebhookViewSet)",
+  "new_string": "router.register('event-rules', views.EventRuleViewSet)\nrouter.register('webhooks', views.WebhookViewSet)\nrouter.register('webhook-deliveries', views.WebhookDeliveryViewSet)"
+}
