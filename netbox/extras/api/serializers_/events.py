@@ -1,6 +1,8 @@
+from rest_framework import serializers
+
 from core.models import ObjectType
 from extras.choices import *
-from extras.models import EventRule, Webhook
+from extras.models import EventRule, Webhook, WebhookDelivery
 from netbox.api.fields import ChoiceField, ContentTypeField
 from netbox.api.gfk_fields import GFKSerializerField
 from netbox.api.serializers import NetBoxModelSerializer
@@ -8,6 +10,7 @@ from users.api.serializers_.mixins import OwnerMixin
 
 __all__ = (
     'EventRuleSerializer',
+    'WebhookDeliverySerializer',
     'WebhookSerializer',
 )
 
@@ -51,3 +54,21 @@ class WebhookSerializer(OwnerMixin, NetBoxModelSerializer):
             'custom_fields', 'owner', 'tags', 'created', 'last_updated',
         ]
         brief_fields = ('id', 'url', 'display', 'name', 'description')
+
+
+#
+# Webhook Deliveries
+#
+
+class WebhookDeliverySerializer(NetBoxModelSerializer):
+    webhook = WebhookSerializer(nested=True, required=False, allow_null=True)
+    destination_url = serializers.CharField(source='url', max_length=500)
+
+    class Meta:
+        model = WebhookDelivery
+        fields = [
+            'id', 'url', 'display', 'webhook', 'destination_url', 'request_body', 'request_headers',
+            'status_code', 'response_body', 'success', 'attempt_count', 'error_message',
+            'custom_fields', 'tags', 'created', 'last_updated',
+        ]
+        brief_fields = ('id', 'url', 'display', 'webhook', 'success', 'attempt_count')

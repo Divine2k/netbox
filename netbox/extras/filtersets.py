@@ -36,6 +36,7 @@ __all__ = (
     'TableConfigFilterSet',
     'TagFilterSet',
     'TaggedItemFilterSet',
+    'WebhookDeliveryFilterSet',
     'WebhookFilterSet',
 )
 
@@ -92,6 +93,33 @@ class WebhookFilterSet(OwnerFilterMixin, NetBoxModelFilterSet):
             Q(name__icontains=value) |
             Q(description__icontains=value) |
             Q(payload_url__icontains=value)
+        )
+
+
+@register_filterset
+class WebhookDeliveryFilterSet(NetBoxModelFilterSet):
+    q = django_filters.CharFilter(
+        method='search',
+        label=_('Search'),
+    )
+    webhook_id = django_filters.ModelMultipleChoiceFilter(
+        queryset=Webhook.objects.all(),
+        field_name='webhook',
+        label=_('Webhook (ID)'),
+    )
+    success = django_filters.BooleanFilter()
+    created = django_filters.IsoDateTimeFromToRangeFilter()
+
+    class Meta:
+        model = WebhookDelivery
+        fields = ('id', 'url', 'status_code', 'attempt_count', 'success')
+
+    def search(self, queryset, name, value):
+        if not value.strip():
+            return queryset
+        return queryset.filter(
+            Q(url__icontains=value) |
+            Q(error_message__icontains=value)
         )
 
 

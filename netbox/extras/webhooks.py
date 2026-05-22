@@ -1,6 +1,8 @@
 import hashlib
 import hmac
 import logging
+import time
+from datetime import UTC, datetime
 
 import requests
 from django_rq import job
@@ -18,6 +20,10 @@ __all__ = (
 )
 
 logger = logging.getLogger('netbox.webhooks')
+
+# Retry policy: up to 5 attempts total, with exponential backoff between attempts.
+WEBHOOK_MAX_ATTEMPTS = 5
+WEBHOOK_RETRY_DELAYS = (1, 2, 4, 8, 16)
 
 
 def register_webhook_callback(func):
@@ -39,6 +45,26 @@ def generate_signature(request_body, secret):
         digestmod=hashlib.sha512
     )
     return hmac_prep.hexdigest()
+
+
+def _record_failed_delivery(webhook, url, body, headers, status_code, response_body, attempt_count, error_message):
+    """
+    Persist a WebhookDelivery record when all retry attempts have been exhausted.
+    Imported lazily to avoid circular imports at module load time.
+    """
+    from extras.models import WebhookDelivery
+
+    WebhookDelivery.objects.create(
+        webhook=webhook,
+        url=url,
+        request_body=body if isinstance(body, str) else body.decode('utf8', errors='replace'),
+        request_headers=dict(headers) if headers else {},
+        status_code=status_code,
+        response_body=response_body[:1000] if response_body else None,
+        success=False,
+        attempt_count=attempt_count,
+        error_message=error_message[:500] if error_message else None,
+    )
 
 
 @job('default')
@@ -120,18 +146,164 @@ def send_webhook(event_rule, object_type, event_type, data, timestamp, username,
     if webhook.secret != '':
         prepared_request.headers['X-Hook-Signature'] = generate_signature(prepared_request.body, webhook.secret)
 
-    # Send the request
-    with requests.Session() as session:
-        session.verify = webhook.ssl_verification
-        if webhook.ca_file_path:
-            session.verify = webhook.ca_file_path
-        proxies = resolve_proxies(url=url, context={'client': webhook})
-        response = session.send(prepared_request, proxies=proxies)
+    # Attempt delivery with exponential backoff. A 2xx response at any attempt is a success
+    # and we stop immediately. If every attempt fails, a WebhookDelivery record is persisted
+    # so an administrator can inspect and replay it.
+    last_status_code = None
+    last_response_body = None
+    last_error_message = None
+    attempts_made = 0
 
-    if 200 <= response.status_code <= 299:
-        logger.info(f"Request succeeded; response status {response.status_code}")
-        return f"Status {response.status_code} returned, webhook successfully processed."
-    logger.warning(f"Request failed; response status {response.status_code}: {response.content}")
+    for attempt in range(1, WEBHOOK_MAX_ATTEMPTS + 1):
+        attempts_made = attempt
+        attempt_ts = datetime.now(UTC).isoformat()
+        try:
+            with requests.Session() as session:
+                session.verify = webhook.ssl_verification
+                if webhook.ca_file_path:
+                    session.verify = webhook.ca_file_path
+                proxies = resolve_proxies(url=url, context={'client': webhook})
+                response = session.send(prepared_request, proxies=proxies)
+
+            last_status_code = response.status_code
+            try:
+                last_response_body = response.text
+            except Exception:
+                last_response_body = None
+            last_error_message = None
+
+            if 200 <= response.status_code <= 299:
+                logger.info(
+                    f"Attempt {attempt}/{WEBHOOK_MAX_ATTEMPTS} succeeded at {attempt_ts}; "
+                    f"response status {response.status_code}"
+                )
+                return f"Status {response.status_code} returned, webhook successfully processed."
+
+            logger.warning(
+                f"Attempt {attempt}/{WEBHOOK_MAX_ATTEMPTS} failed at {attempt_ts}; "
+                f"response status {response.status_code}: {response.content!r}"
+            )
+        except requests.exceptions.RequestException as e:
+            last_status_code = None
+            last_response_body = None
+            last_error_message = str(e) or e.__class__.__name__
+            logger.warning(
+                f"Attempt {attempt}/{WEBHOOK_MAX_ATTEMPTS} raised at {attempt_ts}: "
+                f"{e.__class__.__name__}: {last_error_message}"
+            )
+
+        # If more attempts remain, sleep before retrying.
+        if attempt < WEBHOOK_MAX_ATTEMPTS:
+            delay = WEBHOOK_RETRY_DELAYS[attempt - 1]
+            logger.info(f"Retrying webhook delivery in {delay}s (attempt {attempt + 1}/{WEBHOOK_MAX_ATTEMPTS})")
+            time.sleep(delay)
+
+    # All attempts exhausted without success — persist a dead-letter record.
+    _record_failed_delivery(
+        webhook=webhook,
+        url=url,
+        body=params['data'],
+        headers=dict(prepared_request.headers),
+        status_code=last_status_code,
+        response_body=last_response_body,
+        attempt_count=attempts_made,
+        error_message=last_error_message,
+    )
+
+    if last_status_code is not None:
+        raise requests.exceptions.RequestException(
+            f"Webhook delivery failed after {attempts_made} attempts; last status {last_status_code}."
+        )
     raise requests.exceptions.RequestException(
-        f"Status {response.status_code} returned with content '{response.content}', webhook FAILED to process."
+        f"Webhook delivery failed after {attempts_made} attempts; last error: {last_error_message}"
+    )
+
+
+@job('default')
+def _replay_webhook_delivery(delivery_id):
+    """
+    Replay a previously-failed WebhookDelivery using its stored request body and headers.
+    Re-uses the same retry loop semantics as send_webhook: up to 5 attempts with exponential
+    backoff, persisting a new WebhookDelivery on full failure. The original record is left
+    untouched.
+    """
+    from extras.models import WebhookDelivery
+
+    delivery = WebhookDelivery.objects.select_related('webhook').get(pk=delivery_id)
+    webhook = delivery.webhook
+    url = delivery.url
+    headers = dict(delivery.request_headers or {})
+    body = (delivery.request_body or '').encode('utf8')
+
+    logger.info(f"Replaying webhook delivery #{delivery.pk} to {url}")
+
+    last_status_code = None
+    last_response_body = None
+    last_error_message = None
+    attempts_made = 0
+
+    for attempt in range(1, WEBHOOK_MAX_ATTEMPTS + 1):
+        attempts_made = attempt
+        attempt_ts = datetime.now(UTC).isoformat()
+        try:
+            with requests.Session() as session:
+                if webhook is not None:
+                    session.verify = webhook.ssl_verification
+                    if webhook.ca_file_path:
+                        session.verify = webhook.ca_file_path
+                    proxies = resolve_proxies(url=url, context={'client': webhook})
+                else:
+                    proxies = resolve_proxies(url=url)
+                method = webhook.http_method if webhook is not None else 'POST'
+                response = session.request(method=method, url=url, headers=headers, data=body, proxies=proxies)
+
+            last_status_code = response.status_code
+            try:
+                last_response_body = response.text
+            except Exception:
+                last_response_body = None
+            last_error_message = None
+
+            if 200 <= response.status_code <= 299:
+                logger.info(
+                    f"Replay attempt {attempt}/{WEBHOOK_MAX_ATTEMPTS} succeeded at {attempt_ts}; "
+                    f"response status {response.status_code}"
+                )
+                return f"Replay succeeded with status {response.status_code}."
+
+            logger.warning(
+                f"Replay attempt {attempt}/{WEBHOOK_MAX_ATTEMPTS} failed at {attempt_ts}; "
+                f"response status {response.status_code}"
+            )
+        except requests.exceptions.RequestException as e:
+            last_status_code = None
+            last_response_body = None
+            last_error_message = str(e) or e.__class__.__name__
+            logger.warning(
+                f"Replay attempt {attempt}/{WEBHOOK_MAX_ATTEMPTS} raised at {attempt_ts}: "
+                f"{e.__class__.__name__}: {last_error_message}"
+            )
+
+        if attempt < WEBHOOK_MAX_ATTEMPTS:
+            delay = WEBHOOK_RETRY_DELAYS[attempt - 1]
+            logger.info(f"Retrying replay in {delay}s (attempt {attempt + 1}/{WEBHOOK_MAX_ATTEMPTS})")
+            time.sleep(delay)
+
+    _record_failed_delivery(
+        webhook=webhook,
+        url=url,
+        body=body,
+        headers=headers,
+        status_code=last_status_code,
+        response_body=last_response_body,
+        attempt_count=attempts_made,
+        error_message=last_error_message,
+    )
+
+    if last_status_code is not None:
+        raise requests.exceptions.RequestException(
+            f"Replay failed after {attempts_made} attempts; last status {last_status_code}."
+        )
+    raise requests.exceptions.RequestException(
+        f"Replay failed after {attempts_made} attempts; last error: {last_error_message}"
     )

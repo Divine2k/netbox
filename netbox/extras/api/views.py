@@ -16,7 +16,7 @@ from rq import Worker
 from extras import filtersets
 from extras.jobs import ScriptJob
 from extras.models import *
-from netbox.api.authentication import IsAuthenticatedOrLoginNotRequired, TokenWritePermission
+from netbox.api.authentication import IsAuthenticatedOrLoginNotRequired, TokenPermissions, TokenWritePermission
 from netbox.api.features import SyncedDataMixin
 from netbox.api.metadata import ContentTypeMetadata
 from netbox.api.renderers import TextRenderer
@@ -57,6 +57,58 @@ class WebhookViewSet(NetBoxModelViewSet):
     queryset = Webhook.objects.all()
     serializer_class = serializers.WebhookSerializer
     filterset_class = filtersets.WebhookFilterSet
+
+
+#
+# WebhookDeliveries
+#
+
+class WebhookDeliveryReplayPermission(TokenPermissions):
+    """
+    Replay maps to the ``change_webhookdelivery`` permission rather than the default
+    ``add_webhookdelivery`` that POST would otherwise require.
+    """
+    perms_map = {
+        **TokenPermissions.perms_map,
+        'POST': ['%(app_label)s.change_%(model_name)s'],
+    }
+
+
+class WebhookDeliveryViewSet(NetBoxModelViewSet):
+    metadata_class = ContentTypeMetadata
+    queryset = WebhookDelivery.objects.select_related('webhook').all()
+    serializer_class = serializers.WebhookDeliverySerializer
+    filterset_class = filtersets.WebhookDeliveryFilterSet
+    http_method_names = ['get', 'head', 'options', 'post', 'delete']
+
+    def get_permissions(self):
+        if self.action == 'replay':
+            return [WebhookDeliveryReplayPermission()]
+        return super().get_permissions()
+
+    @action(detail=True, methods=['post'])
+    def replay(self, request, pk):
+        """
+        Re-enqueue a previously failed webhook delivery using the stored request body and headers.
+        Requires change permission. Returns 202 with the queued delivery id.
+        """
+        # Enforce change permission at the queryset level too, mirroring view filtering elsewhere
+        self.queryset = self.queryset.model.objects.restrict(request.user, 'change')
+        delivery = self.get_object()
+
+        if delivery.webhook is None:
+            return Response(
+                {'detail': 'Cannot replay delivery: originating webhook no longer exists.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from extras.webhooks import _replay_webhook_delivery
+        _replay_webhook_delivery.delay(delivery.pk)
+
+        return Response(
+            {'queued': True, 'delivery_id': delivery.pk},
+            status=status.HTTP_202_ACCEPTED,
+        )
 
 
 #

@@ -21,7 +21,7 @@ from extras.models.mixins import RenderTemplateMixin
 from extras.utils import image_upload
 from netbox.config import get_config
 from netbox.events import get_event_type_choices
-from netbox.models import ChangeLoggedModel
+from netbox.models import ChangeLoggedModel, NetBoxModel
 from netbox.models.features import (
     CloningMixin,
     CustomFieldsMixin,
@@ -48,6 +48,7 @@ __all__ = (
     'SavedFilter',
     'TableConfig',
     'Webhook',
+    'WebhookDelivery',
 )
 
 
@@ -302,6 +303,73 @@ class Webhook(CustomFieldsMixin, ExportTemplatesMixin, TagsMixin, OwnerMixin, Ch
         Render the payload URL.
         """
         return render_jinja2(self.payload_url, context)
+
+
+class WebhookDelivery(NetBoxModel):
+    """
+    A record of a failed webhook delivery attempt after retries have been exhausted.
+    Acts as a dead letter queue for webhook deliveries, allowing administrators to
+    inspect failed deliveries and replay them.
+    """
+    webhook = models.ForeignKey(
+        to='extras.Webhook',
+        on_delete=models.SET_NULL,
+        related_name='deliveries',
+        blank=True,
+        null=True,
+        verbose_name=_('webhook'),
+    )
+    url = models.CharField(
+        verbose_name=_('URL'),
+        max_length=500,
+    )
+    request_body = models.TextField(
+        verbose_name=_('request body'),
+        blank=True,
+    )
+    request_headers = models.JSONField(
+        verbose_name=_('request headers'),
+        blank=True,
+        default=dict,
+    )
+    status_code = models.IntegerField(
+        verbose_name=_('status code'),
+        blank=True,
+        null=True,
+    )
+    response_body = models.TextField(
+        verbose_name=_('response body'),
+        blank=True,
+        null=True,
+    )
+    success = models.BooleanField(
+        verbose_name=_('success'),
+        default=False,
+    )
+    attempt_count = models.PositiveIntegerField(
+        verbose_name=_('attempt count'),
+        default=0,
+    )
+    error_message = models.CharField(
+        verbose_name=_('error message'),
+        max_length=500,
+        blank=True,
+        null=True,
+    )
+
+    class Meta:
+        ordering = ('-last_updated',)
+        verbose_name = _('webhook delivery')
+        verbose_name_plural = _('webhook deliveries')
+        indexes = (
+            models.Index(fields=('webhook', '-last_updated')),
+        )
+
+    def __str__(self):
+        return f'Delivery #{self.pk} to {self.url}'
+
+    def get_absolute_url(self):
+        return reverse('extras-api:webhookdelivery-detail', args=[self.pk])
 
 
 class CustomLink(CloningMixin, ExportTemplatesMixin, OwnerMixin, ChangeLoggedModel):
